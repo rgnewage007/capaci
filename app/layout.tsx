@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
-import Providers from "@/components/Providers";
+import { Inter } from "next/font/google";
+import QueryProvider from "@/components/providers/query-client-provider";
+import { ToastContainer } from "@/components/toast-container";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
     title: "Sistema de Capacitación",
@@ -14,10 +18,11 @@ export default function RootLayout({
 }) {
     return (
         <html lang="es">
-            <body>
-                <Providers>
+            <body className={inter.className}>
+                <QueryProvider>
                     {children}
-                </Providers>
+                    <ToastContainer />
+                </QueryProvider>
             </body>
         </html>
     );

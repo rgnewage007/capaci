@@ -1,60 +1,75 @@
-import { NextResponse } from 'next/server';
-import { Course } from '@/types';
+import { NextRequest, NextResponse } from 'next/server';
+import { query } from '@/lib/db';
+import { withAuth } from '@/lib/api-utils';
 
-// Datos de ejemplo para cursos
-const sampleCourses: Course[] = [
-    {
-        id: '1',
-        title: 'Seguridad Industrial',
-        description: 'Curso completo sobre normas de seguridad en el entorno industrial',
-        instructorId: '2',
-        duration: 240,
-        isActive: true,
-        category: 'Seguridad',
-        level: 'intermediate',
-        thumbnailUrl: '/api/placeholder/300/200',
-        createdAt: '2024-01-15T10:00:00Z',
-        updatedAt: '2024-01-20T15:30:00Z'
-    },
-    {
-        id: '2',
-        title: 'Primeros Auxilios',
-        description: 'Aprende técnicas básicas de primeros auxilios para emergencias',
-        instructorId: '2',
-        duration: 180,
-        isActive: true,
-        category: 'Salud',
-        level: 'beginner',
-        thumbnailUrl: '/api/placeholder/300/200',
-        createdAt: '2024-02-01T09:15:00Z',
-        updatedAt: '2024-02-10T14:20:00Z'
-    },
-    {
-        id: '3',
-        title: 'Manejo Defensivo',
-        description: 'Técnicas de conducción segura y preventiva',
-        instructorId: '2',
-        duration: 300,
-        isActive: true,
-        category: 'Conducción',
-        level: 'intermediate',
-        thumbnailUrl: '/api/placeholder/300/200',
-        createdAt: '2024-02-15T11:30:00Z',
-        updatedAt: '2024-02-25T16:45:00Z'
-    }
-];
+// Esta API usa automáticamente Node.js runtime por la configuración global
 
-export async function GET() {
-    try {
-        // Simular un retraso de red
-        await new Promise(resolve => setTimeout(resolve, 1000));
+export async function GET(request: NextRequest) {
+    // Usar el helper withAuth
+    return withAuth(async (req, userId) => {
+        try {
+            const courses = await query(`
+        SELECT 
+          c.*,
+          u.first_name as instructor_first_name,
+          u.last_name as instructor_last_name,
+          COUNT(e.id) as enrolled_students,
+          COUNT(DISTINCT cert.id) as certificates_issued
+        FROM courses c
+        LEFT JOIN users u ON c.instructor_id = u.id
+        LEFT JOIN user_course_enrollments e ON c.id = e.course_id
+        LEFT JOIN certificates cert ON c.id = cert.course_id
+        WHERE c.deleted_at IS NULL
+        GROUP BY c.id, u.first_name, u.last_name
+        ORDER BY c.created_at DESC
+      `);
 
-        return NextResponse.json(sampleCourses);
-    } catch (error) {
-        console.error('Error fetching courses:', error);
-        return NextResponse.json(
-            { error: 'Error fetching courses' },
-            { status: 500 }
-        );
-    }
+            return NextResponse.json(courses.rows);
+        } catch (error) {
+            console.error('Error fetching courses:', error);
+            return NextResponse.json(
+                { error: 'Error fetching courses' },
+                { status: 500 }
+            );
+        }
+    })(request);
+}
+
+export async function POST(request: NextRequest) {
+    return withAuth(async (req, userId) => {
+        try {
+            const body = await request.json();
+            const { title, description, instructor_id, duration, category, level, objectives, requirements } = body;
+
+            // Verificar permisos adicionales si es necesario
+            const userCheck = await query(
+                'SELECT role FROM users WHERE id = $1',
+                [userId]
+            );
+
+            if (userCheck.rows.length === 0 ||
+                (userCheck.rows[0].role !== 'admin' && userCheck.rows[0].role !== 'instructor')) {
+                return NextResponse.json(
+                    { error: 'Insufficient permissions' },
+                    { status: 403 }
+                );
+            }
+
+            const result = await query(
+                `INSERT INTO courses 
+         (title, description, instructor_id, duration, category, level, objectives, requirements) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+         RETURNING *`,
+                [title, description, instructor_id, duration, category, level, objectives, requirements]
+            );
+
+            return NextResponse.json(result.rows[0], { status: 201 });
+        } catch (error) {
+            console.error('Error creating course:', error);
+            return NextResponse.json(
+                { error: 'Error creating course' },
+                { status: 500 }
+            );
+        }
+    })(request);
 }

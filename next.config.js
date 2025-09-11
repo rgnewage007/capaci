@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     experimental: {
-        serverComponentsExternalPackages: ['bcryptjs'],
+        serverComponentsExternalPackages: ['pg', 'bcryptjs'],
     },
     images: {
         domains: ['localhost'],
@@ -12,7 +12,6 @@ const nextConfig = {
             },
         ],
     },
-    // Configuración para servir archivos estáticos
     async headers() {
         return [
             {
@@ -26,11 +25,24 @@ const nextConfig = {
             },
         ];
     },
-    // Aumentar el límite de tamaño para uploads
     api: {
         bodyParser: {
             sizeLimit: '100mb',
         },
+    },
+    // ✅ SOLO ESTA PARTE NUEVA
+    webpack: (config, { isServer, webpack }) => {
+        if (!isServer) {
+            config.resolve.fallback = {
+                ...config.resolve.fallback,
+                fs: false,
+                net: false,
+                tls: false,
+                crypto: false,
+                stream: false,
+            };
+        }
+        return config;
     },
 };
 

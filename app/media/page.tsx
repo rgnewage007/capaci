@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSafeQuery } from '@/hooks/useSafeQuery';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast-simple';
 import Sidebar from '@/components/sidebar';
 import MediaUpload from '@/components/media-upload';
 import MediaViewer from '@/components/media-viewer';

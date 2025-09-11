@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Award, Download, Eye, QrCode } from "lucide-react";
 import { Certificate } from "@/types";
 import { exportCertificatesToExcel } from "@/lib/exportUtils";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks/use-toast-simple";
 
 export default function Certificates() {
     const { toast } = useToast();

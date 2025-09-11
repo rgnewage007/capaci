@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSafeQuery } from "@/hooks/useSafeQuery";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks/use-toast-simple";
 import Sidebar from "@/components/sidebar";
 import UserTable from "@/components/user-table";
 import { Users as UsersIcon, Plus, Download, Filter, Search } from "lucide-react";

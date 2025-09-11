@@ -9,7 +9,7 @@ import { BookOpen, Users, Clock, Plus, Download } from "lucide-react";
 import Link from "next/link";
 import { Course } from "@/types";
 import { exportCoursesToExcel } from "@/lib/exportUtils";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks/use-toast-simple";
 
 export default function Courses() {
     const { toast } = useToast();
