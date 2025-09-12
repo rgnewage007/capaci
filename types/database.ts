@@ -125,3 +125,39 @@ export interface DashboardStats {
     recentEnrollments: any[];
     popularCourses: any[];
 }
+
+
+export interface User {
+    id: string;
+    email: string;
+    password_hash: string;
+    first_name: string;
+    last_name: string;
+    role: string;
+    status: string;
+    profile_image_url?: string;
+    phone_number?: string;
+    department?: string;
+    position?: string;
+    last_login?: Date;
+    created_at: Date;
+    updated_at: Date;
+    deleted_at?: Date;
+}
+
+export interface Course {
+    id: string;
+    title: string;
+    description: string;
+    instructor_id: string;
+    duration: number;
+    is_active: boolean;
+    category: string;
+    level: string;
+    thumbnail_url?: string;
+    objectives?: string;
+    requirements?: string;
+    created_at: Date;
+    updated_at: Date;
+    deleted_at?: Date;
+}

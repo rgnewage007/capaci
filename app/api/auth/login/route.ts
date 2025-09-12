@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { generateToken, verifyPassword } from '@/lib/auth-utils';
-export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
     try {
-        const { email, password } = await request.json();
+        const body = await request.json();
+        const { email, password } = body as { email: string; password: string };
 
+        // Validar campos requeridos
         if (!email || !password) {
             return NextResponse.json(
                 { error: 'Email y contraseña son requeridos' },
@@ -14,13 +15,15 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Buscar usuario
+        // Buscar usuario en la base de datos
         const userResult = await query(
             `SELECT id, email, password_hash, first_name, last_name, role, status 
-       FROM users WHERE email = $1 AND deleted_at IS NULL`,
+             FROM users 
+             WHERE email = $1 AND deleted_at IS NULL`,
             [email]
         );
 
+        // Verificar si el usuario existe
         if (userResult.rows.length === 0) {
             return NextResponse.json(
                 { error: 'Credenciales inválidas' },
@@ -28,7 +31,29 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const user = userResult.rows[0];
+        // Obtener el usuario - DETECTAR AUTOMÁTICAMENTE EL TIPO
+        const row = userResult.rows[0];
+
+        // Detectar si es array u objeto
+        let user: any;
+        if (Array.isArray(row)) {
+            // Es un array: acceder por índices
+            user = {
+                id: row[0],
+                email: row[1],
+                password_hash: row[2],
+                first_name: row[3],
+                last_name: row[4],
+                role: row[5],
+                status: row[6]
+            };
+        } else {
+            // Es un objeto: acceder por propiedades
+            user = row;
+        }
+
+        console.log('Usuario detectado:', user);
+        console.log('Password hash:', user.password_hash);
 
         // Verificar contraseña
         const isValidPassword = await verifyPassword(password, user.password_hash);
@@ -47,7 +72,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Generar token
+        // Generar token JWT
         const token = generateToken(user.id);
 
         // Actualizar último login
@@ -56,6 +81,7 @@ export async function POST(request: NextRequest) {
             [user.id]
         );
 
+        // Devolver respuesta exitosa
         return NextResponse.json({
             success: true,
             token,
@@ -66,10 +92,10 @@ export async function POST(request: NextRequest) {
                 lastName: user.last_name,
                 role: user.role
             }
-        });
+        }, { status: 200 });
 
     } catch (error) {
-        console.error('Login error:', error);
+        console.error('Error en login:', error);
         return NextResponse.json(
             { error: 'Error interno del servidor' },
             { status: 500 }
