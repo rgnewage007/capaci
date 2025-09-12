@@ -1,156 +1,75 @@
 import { NextRequest } from 'next/server';
-import { query } from './db';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import pool from '@/lib/db';
 
-// Interface para usuario
-interface User {
-    id: string;
+// Clave secreta para JWT
+const JWT_SECRET = process.env.JWT_SECRET || 'tu-clave-secreta-temporal';
+
+export interface AuthUser {
+    userId: string;
     email: string;
-    password_hash: string;
-    first_name: string;
-    last_name: string;
     role: string;
+}
+
+// Interface para el resultado de la base de datos
+interface UserRow {
+    id: string;
     status: string;
 }
 
-// Verificar token de acceso
-export async function verifyAccess(request: NextRequest) {
+// Verificar token de acceso y devolver usuario decodificado
+export async function verifyAccess(request: NextRequest): Promise<AuthUser | null> {
     try {
-        const token = request.headers.get('authorization')?.replace('Bearer ', '');
+        console.log('🔐 Verificando acceso...');
 
-        if (!token) {
-            return false;
-        }
+        const authHeader = request.headers.get('authorization');
+        console.log('Authorization header:', authHeader);
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
-
-        // Verificar que el usuario existe y está activo
-        const userResult = await query(
-            'SELECT id, status FROM users WHERE id = $1 AND deleted_at IS NULL',
-            [decoded.userId]
-        );
-
-        if (userResult.rows.length === 0) {
-            return false;
-        }
-
-        const row = userResult.rows[0] as any; // Usamos any temporalmente
-
-        // Detectar el tipo de estructura
-        let status: string;
-
-        if (row && typeof row === 'object') {
-            if (row.status) {
-                // Es objeto con propiedades
-                status = row.status;
-            } else if (Array.isArray(row) && row.length >= 2) {
-                // Es array: id en [0], status en [1]
-                status = row[1];
-            } else {
-                return false;
-            }
-        } else {
-            return false;
-        }
-
-        return status === 'active';
-    } catch (error) {
-        console.error('Error verifying access:', error);
-        return false;
-    }
-}
-
-// Obtener usuario desde token
-export async function getUserFromToken(token: string) {
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
-
-        const userResult = await query(
-            `SELECT id, email, first_name, last_name, role, status 
-       FROM users WHERE id = $1 AND deleted_at IS NULL`,
-            [decoded.userId]
-        );
-
-        if (userResult.rows.length === 0) {
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            console.log('❌ No Bearer token found');
             return null;
         }
 
-        const row = userResult.rows[0] as any;
+        const token = authHeader.substring(7);
+        console.log('Token recibido:', token ? `${token.substring(0, 20)}...` : 'Empty');
 
-        // Detectar y mapear la estructura
-        if (row && typeof row === 'object') {
-            if (row.id && row.email) {
-                // Es objeto con propiedades
-                return {
-                    id: row.id,
-                    email: row.email,
-                    first_name: row.first_name,
-                    last_name: row.last_name,
-                    role: row.role,
-                    status: row.status
-                };
-            } else if (Array.isArray(row) && row.length >= 6) {
-                // Es array: acceder por índices
-                return {
-                    id: row[0],
-                    email: row[1],
-                    first_name: row[2],
-                    last_name: row[3],
-                    role: row[4],
-                    status: row[5]
-                };
-            }
+        if (!token) {
+            console.log('❌ Token vacío');
+            return null;
         }
 
-        return null;
+        // Verificar el token JWT
+        const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
+        console.log('✅ Token decodificado:', decoded);
+
+        // Opcional: Verificar que el usuario existe y está activo en la BD
+        try {
+            const userResult = await pool.query(
+                'SELECT id, status FROM users WHERE id = $1 AND status = $2 AND deleted_at IS NULL',
+                [decoded.userId, 'active']
+            );
+
+            if (userResult.rows.length === 0) {
+                console.log('❌ Usuario no encontrado o inactivo en BD');
+                return null;
+            }
+
+            const user = userResult.rows[0] as UserRow;
+            console.log('✅ Usuario verificado en BD. Estado:', user.status);
+        } catch (dbError) {
+            console.error('Error verificando usuario en BD:', dbError);
+            // Si hay error con la BD, igual retornamos el usuario del token
+        }
+
+        return decoded;
+
     } catch (error) {
-        console.error('Error getting user from token:', error);
+        console.error('❌ Error verifying access:', error);
         return null;
     }
 }
 
-// Función helper para parsear filas de la base de datos
-export function parseUserRow(row: any): User | null {
-    if (!row) return null;
-
-    if (row.id && row.email) {
-        // Es objeto con propiedades
-        return {
-            id: row.id,
-            email: row.email,
-            password_hash: row.password_hash,
-            first_name: row.first_name,
-            last_name: row.last_name,
-            role: row.role,
-            status: row.status
-        };
-    } else if (Array.isArray(row) && row.length >= 7) {
-        // Es array: acceder por índices
-        return {
-            id: row[0],
-            email: row[1],
-            password_hash: row[2],
-            first_name: row[3],
-            last_name: row[4],
-            role: row[5],
-            status: row[6]
-        };
-    }
-
-    return null;
-}
-
-// Las otras funciones permanecen igual
-export function generateToken(userId: string): string {
-    return jwt.sign({ userId }, process.env.JWT_SECRET!, { expiresIn: '7d' });
-}
-
-export async function hashPassword(password: string): Promise<string> {
-    const saltRounds = 12;
-    return bcrypt.hash(password, saltRounds);
-}
-
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-    return bcrypt.compare(password, hash);
+// Función para generar tokens
+export function generateToken(payload: AuthUser): string {
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
 }

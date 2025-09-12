@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Home, BookOpen, Lock, CheckCircle, Play, Eye } from "lucide-react";
+import { ArrowLeft, Home, BookOpen, Lock, CheckCircle, Play, Eye, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast-simple";
-import axios from 'axios';
+import api from "@/lib/axios-auth";
 
 interface MediaItem {
     id: string;
@@ -41,50 +41,79 @@ export default function CoursePresentationPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [courseCompleted, setCourseCompleted] = useState(false);
 
-    useEffect(() => {
-        const fetchCourseData = async () => {
-            try {
-                setIsLoading(true);
-                const token = localStorage.getItem('authToken');
+    // Función para obtener el token - SIN console.error para evitar loops
+    const getAuthToken = useCallback(() => {
+        if (typeof window === 'undefined') return null;
+        try {
+            return localStorage.getItem('authToken');
+        } catch (error) {
+            return null;
+        }
+    }, []);
 
-                const response = await axios.get(`/api/courses/${courseId}/presentation`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
-                });
+    const fetchCourseData = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            const token = getAuthToken();
 
-                setCourse(response.data);
-            } catch (error) {
-                console.error('Error fetching course data:', error);
-                toast({
-                    title: "Error",
-                    description: "No se pudo cargar el contenido del curso",
-                    variant: "destructive",
-                });
-                router.push('/courses');
-            } finally {
-                setIsLoading(false);
+            if (!token) {
+                toast("Error de autenticación", "Por favor, inicia sesión nuevamente", "destructive");
+                router.push('/login');
+                return;
             }
-        };
 
+            const response = await api.get(`/courses/${courseId}/presentation`);
+            setCourse(response.data);
+
+            if (response.data.completedModules === response.data.totalModules) {
+                setCourseCompleted(true);
+            }
+        } catch (error: any) {
+            console.error('Error fetching course data:', error);
+
+            if (error.response?.status === 401) {
+                toast("Sesión expirada", "Por favor, inicia sesión nuevamente", "destructive");
+
+                // Limpiar tokens inválidos
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('refreshToken');
+
+                // Redirigir después de un breve delay
+                setTimeout(() => {
+                    router.push('/login');
+                }, 2000);
+            } else if (error.response?.status === 404) {
+                toast("Curso no encontrado", "El curso solicitado no existe", "destructive");
+                router.push('/courses');
+            } else if (error.code === 'ECONNABORTED') {
+                toast("Error de conexión", "El servidor está tardando demasiado en responder", "destructive");
+            } else {
+                toast("Error", "No se pudo cargar el contenido del curso", "destructive");
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    }, [courseId, getAuthToken]); // Solo courseId y getAuthToken como dependencias
+
+    useEffect(() => {
         fetchCourseData();
-    }, [courseId, router, toast]);
+    }, [fetchCourseData]); // Solo fetchCourseData como dependencia
 
     const handleCompleteModule = async (moduleId: string) => {
         try {
-            const token = localStorage.getItem('authToken');
+            const token = getAuthToken();
+            if (!token) {
+                toast("Error de autenticación", "Por favor, inicia sesión nuevamente", "destructive");
+                router.push('/login');
+                return;
+            }
 
-            await axios.post(`/api/progress`, {
+            await api.post(`/progress`, {
                 moduleId,
                 courseId,
                 status: 'completed'
-            }, {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
             });
 
-            // Actualizar estado local
             setCourse(prev => {
                 if (!prev) return null;
 
@@ -94,6 +123,10 @@ export default function CoursePresentationPage() {
 
                 const completedCount = updatedMediaItems.filter(item => item.isCompleted).length;
 
+                if (completedCount === prev.totalModules) {
+                    setCourseCompleted(true);
+                }
+
                 return {
                     ...prev,
                     mediaItems: updatedMediaItems,
@@ -101,48 +134,53 @@ export default function CoursePresentationPage() {
                 };
             });
 
-            toast({
-                title: "Módulo completado",
-                description: "Has completado este módulo exitosamente",
-            });
-        } catch (error) {
+            toast("Módulo completado", "Has completado este módulo exitosamente");
+        } catch (error: any) {
             console.error('Error completing module:', error);
-            toast({
-                title: "Error",
-                description: "No se pudo marcar el módulo como completado",
-                variant: "destructive",
-            });
+
+            if (error.response?.status === 401) {
+                toast("Sesión expirada", "Por favor, inicia sesión nuevamente", "destructive");
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('refreshToken');
+                router.push('/login');
+            } else {
+                toast("Error", "No se pudo marcar el módulo como completado", "destructive");
+            }
         }
     };
 
     const handleCompleteCourse = async () => {
         try {
-            const token = localStorage.getItem('authToken');
+            const token = getAuthToken();
+            if (!token) {
+                toast("Error de autenticación", "Por favor, inicia sesión nuevamente", "destructive");
+                router.push('/login');
+                return;
+            }
 
-            await axios.post(`/api/courses/${courseId}/complete`, {}, {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            });
+            await api.post(`/courses/${courseId}/complete`, {});
 
             setCourseCompleted(true);
-            toast({
-                title: "¡Curso Completado!",
-                description: "Has finalizado el curso exitosamente",
-            });
-        } catch (error) {
+            toast("¡Curso Completado!", "Has finalizado el curso exitosamente");
+        } catch (error: any) {
             console.error('Error completing course:', error);
-            toast({
-                title: "Error",
-                description: "No se pudo completar el curso",
-                variant: "destructive",
-            });
+
+            if (error.response?.status === 401) {
+                toast("Sesión expirada", "Por favor, inicia sesión nuevamente", "destructive");
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('refreshToken');
+                router.push('/login');
+            } else {
+                toast("Error", "No se pudo completar el curso", "destructive");
+            }
         }
     };
 
     const handleNext = () => {
         if (course && currentMediaIndex < course.mediaItems.length - 1) {
             setCurrentMediaIndex(currentMediaIndex + 1);
+        } else if (course && course.completedModules === course.totalModules) {
+            setCourseCompleted(true);
         }
     };
 
@@ -202,6 +240,7 @@ export default function CoursePresentationPage() {
         return (
             <div className="min-h-screen bg-gray-900 flex items-center justify-center">
                 <div className="text-center text-white">
+                    <AlertCircle className="mx-auto mb-4" size={48} />
                     <h2 className="text-xl font-bold mb-2">Curso no encontrado</h2>
                     <p>El curso que buscas no existe o no tienes acceso.</p>
                     <Button onClick={() => router.push('/courses')} className="mt-4">
@@ -229,16 +268,28 @@ export default function CoursePresentationPage() {
                     <div className="text-center text-white">
                         <h1 className="text-xl font-bold">{course.title}</h1>
                         <p className="text-sm text-gray-300">{course.description}</p>
-                        <Progress
-                            value={(course.completedModules / course.totalModules) * 100}
-                            className="mt-2 w-64"
-                        />
+                        <div className="flex items-center justify-center mt-2">
+                            <Progress
+                                value={(course.completedModules / course.totalModules) * 100}
+                                className="w-64 mr-4"
+                            />
+                            <span className="text-sm">
+                                {Math.round((course.completedModules / course.totalModules) * 100)}%
+                            </span>
+                        </div>
                         <p className="text-xs text-gray-400 mt-1">
                             {course.completedModules} de {course.totalModules} módulos completados
                         </p>
                     </div>
 
-                    <div className="w-24"></div>
+                    <Button
+                        onClick={() => router.push('/courses')}
+                        variant="ghost"
+                        className="text-white hover:bg-white/10"
+                    >
+                        <Home className="mr-2" size={16} />
+                        Cursos
+                    </Button>
                 </div>
 
                 {/* Content */}
@@ -247,10 +298,17 @@ export default function CoursePresentationPage() {
                     <div className="lg:col-span-3">
                         <Card className="bg-gray-800 border-gray-700">
                             <CardHeader className="text-white">
-                                <CardTitle>{currentMedia.title}</CardTitle>
-                                <CardDescription className="text-gray-300">
-                                    {currentMedia.description}
-                                </CardDescription>
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <CardTitle>{currentMedia.title}</CardTitle>
+                                        <CardDescription className="text-gray-300">
+                                            {currentMedia.description}
+                                        </CardDescription>
+                                    </div>
+                                    <div className="flex items-center text-sm text-gray-400">
+                                        <span>Módulo {currentMediaIndex + 1} de {course.mediaItems.length}</span>
+                                    </div>
+                                </div>
                             </CardHeader>
                             <CardContent>
                                 {renderMediaContent(currentMedia)}
@@ -275,13 +333,20 @@ export default function CoursePresentationPage() {
                                         </Button>
                                     )}
 
+                                    {currentMedia.isCompleted && (
+                                        <div className="flex items-center text-green-400">
+                                            <CheckCircle className="mr-2" size={16} />
+                                            <span>Completado</span>
+                                        </div>
+                                    )}
+
                                     <Button
                                         onClick={handleNext}
-                                        disabled={currentMediaIndex === course.mediaItems.length - 1}
+                                        disabled={currentMediaIndex === course.mediaItems.length - 1 && !currentMedia.isCompleted}
                                         variant="outline"
                                         className="text-white border-gray-600"
                                     >
-                                        Siguiente
+                                        {currentMediaIndex === course.mediaItems.length - 1 ? 'Finalizar' : 'Siguiente'}
                                     </Button>
                                 </div>
                             </CardContent>
@@ -316,7 +381,7 @@ export default function CoursePresentationPage() {
                                                     ) : (
                                                         <Lock size={16} />
                                                     )}
-                                                    <span className="text-sm">{item.title}</span>
+                                                    <span className="text-sm truncate">{item.title}</span>
                                                 </div>
                                                 <div className="text-xs">
                                                     {item.type === 'video' && '🎬'}
@@ -356,6 +421,10 @@ function renderMediaContent(media: MediaItem) {
                         src={`/api/protected-content/${media.filename}`}
                         alt={media.title}
                         className="max-w-full max-h-full object-contain"
+                        onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = '/api/placeholder/800/450';
+                        }}
                     />
                 </div>
             );
@@ -413,4 +482,4 @@ function renderMediaContent(media: MediaItem) {
                 </div>
             );
     }
-} 
+}

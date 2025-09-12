@@ -35,28 +35,21 @@ export default function LoginPage() {
             if (response.ok) {
                 // Guardar token y datos de usuario
                 localStorage.setItem('authToken', data.token);
+                localStorage.setItem('refreshToken', data.refreshToken); // ← Añade esto
                 localStorage.setItem('user', JSON.stringify(data.user));
 
-                toast({
-                    title: '¡Bienvenido!',
-                    description: `Hola ${data.user.firstName}`,
-                });
+                // Toast corregido - parámetros individuales
+                toast('¡Bienvenido!', `Hola ${data.user.firstName}`);
 
                 // Redirigir al dashboard
                 router.push('/dashboard');
             } else {
-                toast({
-                    title: 'Error',
-                    description: data.error || 'Error al iniciar sesión',
-                    variant: 'destructive',
-                });
+                // Toast corregido - con variant destructivo
+                toast('Error', data.error || 'Error al iniciar sesión', 'destructive');
             }
         } catch (error) {
-            toast({
-                title: 'Error de conexión',
-                description: 'No se pudo conectar al servidor',
-                variant: 'destructive',
-            });
+            // Toast corregido
+            toast('Error de conexión', 'No se pudo conectar al servidor', 'destructive');
         } finally {
             setIsLoading(false);
         }
