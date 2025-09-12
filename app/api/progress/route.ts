@@ -1,55 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { verifyAccess, getUserFromToken } from '@/lib/auth-utils';
+import { verifyAccess } from '@/lib/auth-utils';
 
 export async function POST(request: NextRequest) {
     try {
         // Verificar autenticación
-        const hasAccess = await verifyAccess(request);
-        if (!hasAccess) {
+        const authResult = await verifyAccess(request);
+        if (!authResult || !authResult.userId) {
             return NextResponse.json(
                 { error: 'No autorizado' },
                 { status: 401 }
             );
         }
 
-        const token = request.headers.get('authorization')?.replace('Bearer ', '');
-        const user = token ? await getUserFromToken(token) : null;
+        const { moduleId, courseId, status = 'completed', timeSpent = 0 } = await request.json();
 
-        if (!user) {
+        if (!moduleId || !courseId) {
             return NextResponse.json(
-                { error: 'Usuario no encontrado' },
-                { status: 404 }
+                { error: 'moduleId y courseId son requeridos' },
+                { status: 400 }
             );
         }
-
-        const { moduleId, courseId, status = 'completed' } = await request.json();
 
         // Verificar si ya existe progreso
         const existingProgress = await query(
             'SELECT id FROM user_module_progress WHERE user_id = $1 AND module_id = $2',
-            [user.id, moduleId]
+            [authResult.userId, moduleId]
         );
 
         if (existingProgress.rows.length > 0) {
             // Actualizar progreso existente
             await query(
                 `UPDATE user_module_progress 
-         SET status = $3, updated_at = NOW()
-         WHERE user_id = $1 AND module_id = $2`,
-                [user.id, moduleId, status]
+                 SET status = $3, time_spent = time_spent + $4, updated_at = NOW()
+                 WHERE user_id = $1 AND module_id = $2`,
+                [authResult.userId, moduleId, status, timeSpent]
             );
         } else {
             // Crear nuevo registro de progreso
             await query(
                 `INSERT INTO user_module_progress 
-         (user_id, module_id, course_id, status) 
-         VALUES ($1, $2, $3, $4)`,
-                [user.id, moduleId, courseId, status]
+                 (user_id, module_id, course_id, status, time_spent) 
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [authResult.userId, moduleId, courseId, status, timeSpent]
             );
         }
 
-        return NextResponse.json({ success: true });
+        // Recalcular progreso total del curso
+        const progressResult = await query(
+            `SELECT 
+                COUNT(*) as total_modules,
+                COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_modules
+             FROM user_module_progress 
+             WHERE user_id = $1 AND course_id = $2`,
+            [authResult.userId, courseId]
+        );
+
+        return NextResponse.json({ 
+            success: true,
+            progress: progressResult.rows[0]
+        });
 
     } catch (error) {
         console.error('Error saving progress:', error);
