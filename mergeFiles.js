@@ -1,31 +1,43 @@
+// merge-code.js
 const fs = require('fs');
 const path = require('path');
 
-const folder = './'; // carpeta raíz del proyecto
-const outputFile = 'proyecto_completo.txt';
-const extensions = ['.jsx', '.js', '.ts', '.tsx', '.css', '.json', '.html'];
+const outputFile = 'code-analysis.txt';
+const files = [
+    'app/api/courses/[courseId]/presentation/route.ts',
+    'app/courses/[courseId]/page.tsx',
+    'app/courses/[courseId]/presentation/page.tsx'
+];
 
-function getFiles(dir) {
-    let results = [];
-    fs.readdirSync(dir).forEach(file => {
-        const fullPath = path.join(dir, file);
-        const stat = fs.statSync(fullPath);
-        if (stat && stat.isDirectory()) {
-            results = results.concat(getFiles(fullPath));
-        } else if (extensions.includes(path.extname(fullPath))) {
-            results.push(fullPath);
+async function mergeFiles() {
+    try {
+        // Encabezado del archivo
+        let content = `=== ANÁLISIS DE CÓDIGO - PROGRESSBAR ISSUE ===\n\n`;
+        content += `Fecha: ${new Date().toLocaleString()}\n\n`;
+
+        // Recorrer cada archivo y agregar su contenido
+        for (const file of files) {
+            const filePath = path.join(process.cwd(), file);
+            
+            if (fs.existsSync(filePath)) {
+                content += `=== ARCHIVO: ${file} ===\n\n`;
+                const fileContent = fs.readFileSync(filePath, 'utf8');
+                content += fileContent;
+                content += '\n\n';
+            } else {
+                content += `=== ARCHIVO: ${file} ===\n\n`;
+                content += `❌ ARCHIVO NO ENCONTRADO\n\n`;
+            }
         }
-    });
-    return results;
+
+        // Escribir el archivo de salida
+        fs.writeFileSync(outputFile, content, 'utf8');
+        console.log(`✅ Archivo generado: ${outputFile}`);
+        
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+    }
 }
 
-const allFiles = getFiles(folder);
-let allText = '';
-
-allFiles.forEach(file => {
-    allText += `\n\n// ===== ${file} =====\n\n`;
-    allText += fs.readFileSync(file, 'utf8');
-});
-
-fs.writeFileSync(outputFile, allText, 'utf8');
-console.log(`Archivo creado: ${outputFile}`);
+// Ejecutar el script
+mergeFiles();
