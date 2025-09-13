@@ -1,11 +1,34 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 
-export function useSafeQuery(queryKey, queryFn, options) {
-  return useQuery({
+interface UseSafeQueryOptions<TData> extends Omit<UseQueryOptions<TData, Error>, 'queryKey' | 'queryFn'> {
+    queryKey: any[];
+    enabled?: boolean;
+}
+
+export function useSafeQuery<TData>({
     queryKey,
-    queryFn,
+    enabled = true,
     ...options
-  });
+}: UseSafeQueryOptions<TData>) {
+    const queryFn = async () => {
+        try {
+            const response = await fetch(queryKey[0]);
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        } catch (error) {
+            console.error('Query error:', error);
+            throw error;
+        }
+    };
+
+    return useQuery({
+        ...options,
+        queryKey,
+        queryFn,
+        enabled,
+    });
 }
